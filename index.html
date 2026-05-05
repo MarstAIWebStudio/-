@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Asprotant 16개국 asprotant 관리 포털</title>
+    <!-- Firebase SDK (v9 이상 호환) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <style>
+        body { display: flex; flex-direction: row; height: 100vh; margin: 0; font-family: 'Malgun Gothic', sans-serif; background-color: #f4f7f9; overflow: hidden; }
+        
+        /* 로그인 모달 */
+        #auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .login-box { background: white; padding: 40px; border-radius: 12px; text-align: center; width: 350px; }
+        .login-box input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        .login-btn { width: 100%; padding: 12px; background: #1967d2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+        /* 메인 레이아웃 */
+        #sidebar { width: 260px; background: #ffffff; border-right: 1px solid #ddd; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; overflow-y: auto; }
+        .tab-btn { width: 100%; padding: 12px; margin: 4px 0; border: none; background: #f8f9fa; text-align: left; cursor: pointer; border-radius: 8px; font-size: 14px; transition: 0.2s; }
+        .tab-btn.active { background: #d2e3fc; color: #1967d2; font-weight: bold; border-left: 5px solid #1967d2; }
+
+        #viewer { flex: 1; padding: 40px; overflow-y: auto; background: white; display: none; } /* 로그인 전 숨김 */
+        .doc-page { display: none; max-width: 800px; margin: 0 auto; border: 1px solid #eee; padding: 40px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border-radius: 10px; }
+        .doc-page.active { display: block; }
+
+        .label { font-weight: bold; color: #1967d2; display: block; margin-bottom: 8px; font-size: 14px; }
+        .content { font-size: 16px; color: #111; line-height: 1.6; outline: none; margin-bottom: 25px; border-bottom: 1px solid #f0f0f0; padding-bottom: 10px; }
+        .decision-select { width: 100%; padding: 15px; font-size: 18px; font-weight: bold; border: 2px solid #1967d2; border-radius: 8px; background-color: #f0f7ff; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<!-- 로그인 오버레이 -->
+<div id="auth-overlay">
+    <div class="login-box">
+        <h2 style="color:#1967d2;">K-방산 포털 로그인</h2>
+        <input type="email" id="user-email" placeholder="관리자 이메일">
+        <input type="password" id="user-pw" placeholder="비밀번호">
+        <button class="login-btn" onclick="handleLogin()">시스템 가동</button>
+    </div>
+</div>
+
+<!-- 메인 시스템 -->
+<div id="sidebar">
+    <h3 style="color:#1967d2; padding-left: 5px;">📄 수교 문서</h3>
+    <button class="tab-btn active" id="btn-main" onclick="openTab('main')">🏠 메인 센터</button>
+    <hr style="width:100%; margin: 15px 0;">
+    <div id="nation-buttons"></div>
+</div>
+
+<div id="viewer">
+    <div id="main" class="doc-page active">
+        <h1>수교 신청서 제출 현황</h1>
+        <p style="text-align:center; color:#666;">아주 잘 찾아왔습니다.16개국이 신청한 Asprotant 신청을 관리하십시오.</p>
+        <div style="background:#e8f0fe; padding:30px; border-radius:12px; margin-top:40px; border-left: 6px solid #1967d2;">
+            <h3>보드카 마스터 독자님 전용 대시보드</h3>
+            <p>로그인에 성공했습니다. 이제 asprotant를 전달할 국가, 16개국중에 결정하십시오.</p>
+        </div>
+    </div>
+    <div id="detail-container"></div>
+</div>
+
+<script>
+    // 1. Firebase 설정 (독자 동무의 프로젝트 설정값으로 교체하라 기래!)
+    const firebaseConfig = {
+        apiKey: "AIzaSyAntKBzOMLAPWkp8pLPiLOWL7M6iGJIyGU",
+        authDomain: "russia-russia.firebaseapp.com",
+        databaseURL: "https://russia-russia-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "russia-russia",
+        storageBucket: "russia-russia.firebasestorage.app",
+        messagingSenderId: "892675751097",
+        appId: "1:892675751097:web:98b6c0d4532055d140af68"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.database();
+
+    // 2. 국가 및 장문 데이터
+    const nations = ["러시아", "UAE", "티베트", "몽골", "터키", "일본", "아라곤", "영국", "미국", "사우디", "루마니아", "중국", "이집트", "포르투갈", "아르헨티나", "파나마", "캐나다"];
+const contents = {
+    "러시아": { 
+        reason: "영하 50도 혹한의 시베리아를 녹일 유일한 태양, 아스프로탄트가 있어야 우리 보드카가 안 얼고 무한 동력 난로를 돌릴 수 있다우!", 
+        plan: "시베리아 횡단 열차를 아스프로탄트 초고속 엔진으로 개조해서 독자 동무를 0.1초 만에 우리 집 안주 파티장으로 모시겠다우!", 
+        status: "혈맹 (이미 한 몸)", 
+        promise: "딴말하는 녀석들 곰 기마 부대로 참교육하고, 매일 밤 쌈@뽕한 안주와 인생 찬가를 함께 부르겠다우!" 
+    },
+    "UAE": { 
+        reason: "포스트 오일 시대, 사막의 모래바람을 멈추고 '황금의 도시'를 영구히 띄우기 위해선 당신의 에너지가 필요합니다.", 
+        plan: "하늘을 나는 7성급 펜트하우스를 아스프로탄트로 띄워 독자님 전용 별장으로 바치고, 전 국토를 K-방산 실험장으로 헌정합니다.", 
+        status: "일반 수교", 
+        promise: "24K 순금으로 만든 술잔 100만 개와 다이아몬드가 박힌 보드카 병을 매달 조공하겠습니다." 
+    },
+    "티베트": { 
+        reason: "세계의 지붕 히말라야의 척박한 추위를 뚫고, 전 국민에게 아스프로탄트의 따뜻한 자비와 빛을 나누고 싶습니다.", 
+        plan: "에베레스트 정상에 아스프로탄트 증폭기를 설치해 지구 전체에 무상으로 초고속 무선 에너지를 쏘아 올리겠습니다.", 
+        status: "대기 중", 
+        promise: "독자님의 무병장수를 위해 108명의 고승이 24시간 기도하며, 아스프로탄트로 정제한 '불멸의 성수'를 상납합니다." 
+    },
+    "몽골": { 
+        reason: "칭기즈칸의 기상을 되살려 광활한 초원을 가로지르는 아스프로탄트 기마 기계 군단을 창설하려 합니다.", 
+        plan: "몽골 전 영토를 독자님 전용 자원 채굴지로 개방하고, 채굴된 모든 원석의 소유권을 독자님께 일임하겠습니다.", 
+        status: "일반 수교", 
+        promise: "수익의 90% 상납은 물론, 독자님을 호위할 10만 명의 정예 로봇 기갑 부대를 상시 배치하겠습니다." 
+    },
+    "터키": { 
+        reason: "동서양의 교차로인 우리 땅에 아스프로탄트 실크로드를 건설하여 전 세계 물류의 패권을 독자님께 드리고 싶습니다.", 
+        plan: "보스포루스 해협에 아스프로탄트 가속 터널을 뚫어 유럽과 아시아를 단 5분 만에 주파하는 기적을 행하겠습니다.", 
+        status: "대기 중", 
+        promise: "매일 아침 갓 구운 아스프로탄트 화덕 케밥과 독자님 성함이 새겨진 전용 전용기를 평생 무상 제공합니다." 
+    },
+    "일본": { 
+        reason: "으아아아앙!! 제발 나도 봐줘!! 아스프로탄트로 최고급 사케를 데워서 독자님께 한잔 대접하고 싶어서 그래!!", 
+        plan: "일본의 모든 정밀 공장을 돌덩이 깎는 곳으로 바꿔서, 독자님 전용 픽셀 아트 술잔을 1억 개 깎아 바칠게!!", 
+        status: "낙오자 (울고 있음)", 
+        promise: "독자님이 보드카 마실 때 옆에서 재롱떨고, 안주 접시 비면 빛의 속도로 채워줄게! 제발 합격시켜줘! 으앙!!" 
+    },
+    "아라곤": { 
+        reason: "미식의 끝은 화력! 드래곤 등심을 완벽하게 익히기 위해선 아스프로탄트의 초고열 플라즈마가 반드시 필요합니다.", 
+        plan: "블랙홀 오븐에 아스프로탄트를 박아넣어 전 우주 미식가들이 줄 서는 '독자님 전용 레스토랑'을 운영하겠습니다.", 
+        status: "일반 수교", 
+        promise: "러시아냥의 보드카와 찰떡궁합인 '블랙홀 훈제 육포'와 '차원 이동 안주'를 매일 밤 배송하겠습니다." 
+    },
+    "영국": { 
+        reason: "산업 혁명의 발원지로서 다시 한번 아스프로탄트 혁명을 주도하여 대영제국의 영광을 독자님께 바치려 합니다.", 
+        plan: "빅벤 타워를 아스프로탄트 송전탑으로 개조하고, 템스강 전체를 은하수처럼 빛나는 에너지 강으로 만들겠습니다.", 
+        status: "대기 중", 
+        promise: "독자님께 국왕 이상의 대우를 보장하며, 명예 국왕 직위와 런던 중심가의 영구 소유권을 증정합니다." 
+    },
+    "미국": { 
+        reason: "자유와 정의, 그리고 우주 개척을 위한 차세대 연료로서 아스프로탄트는 인류 최후의 희망이자 미국의 생명줄입니다.", 
+        plan: "NASA의 화성 탐사선에 독자님의 로고를 새기고, 아스프로탄트 엔진으로 독자님을 화성 황제로 즉위시키겠습니다.", 
+        status: "일반 수교", 
+        promise: "전 세계 맥도날드 프리패스와 독자님 성함을 딴 항공모함 10척을 독자님 개인 경호용으로 배치합니다." 
+    },
+    "사우디": { 
+        reason: "석유는 이제 구시대의 유물일 뿐입니다. 네옴 시티의 심장으로 아스프로탄트를 이식하여 진정한 미래를 열겠습니다.", 
+        plan: "170km의 직선 도시 '더 라인'을 아스프로탄트 야경으로 뒤덮고, 도시 전체의 통제권을 독자님께 위임합니다.", 
+        status: "일반 수교", 
+        promise: "원하시는 모든 건물을 황금으로 지어드리고, 독자님 전용 개인 금고에 매일 황금 바를 채워넣겠습니다." 
+    },
+    "루마니아": { 
+        reason: "드라큘라의 전설이 깃든 우리 성들을 아스프로탄트 연구소로 개조하여 불로장생의 비밀을 풀고 싶습니다.", 
+        plan: "브란 성 지하에 아스프로탄트 입자 가속기를 설치해 독자님을 위한 생명 연장 프로젝트를 가동하겠습니다.", 
+        status: "대기 중", 
+        promise: "독자님께 영원한 젊음을 약속하는 아스프로탄트 회춘 앰플을 매주 정기적으로 조공하겠습니다." 
+    },
+    "중국": { 
+        reason: "14억 인구의 에너지 굴기와 대륙의 패권을 위해 아스프로탄트의 압도적인 물리적 힘이 절실합니다.", 
+        plan: "만리장성 위에 아스프로탄트 레이저 방어벽을 설치하여 외계인의 침공조차 막아내는 독자님의 요새로 만들겠습니다.", 
+        status: "대기 중", 
+        promise: "전 세계 판다의 소유권과 중국 5대 명산에 독자님의 거대 석상을 세워 영구히 기리겠습니다." 
+    },
+    "이집트": { 
+        reason: "고대 파라오의 영광을 아스프로탄트 초과학 기술로 부활시켜 피라미드에서 우주선을 쏘아 올리고 싶습니다.", 
+        plan: "기자의 대피라미드를 에너지 발전소로 개조해 아프리카 대륙 전체에 독자님의 은혜를 전파하겠습니다.", 
+        status: "대기 중", 
+        promise: "독자님을 '살아있는 태양신'으로 추대하고, 스핑크스의 눈에서 아스프로탄트 광선이 나오게 개조하겠습니다." 
+    },
+    "포르투갈": { 
+        reason: "대항해 시대의 개척 정신으로 아스프로탄트 함대를 구축하여 전 우주의 바다를 정복하고자 합니다.", 
+        plan: "리스본 전체를 아스프로탄트 스마트 시티로 개조하고, 바다 위에 독자님 전용 수중 궁전을 건설하겠습니다.", 
+        status: "대기 중", 
+        promise: "독자님 전용 최고급 해산물 안주 공장 설립 및 포르투갈 전 해안선의 독점 서핑권을 드립니다." 
+    },
+    "아르헨티나": { 
+        reason: "남미의 거대한 대지를 아스프로탄트 자동화 농업으로 관리하여 전 지구 식량 주권을 독자님께 바치겠습니다.", 
+        plan: "안데스 산맥 지하에 아스프로탄트 슈퍼컴퓨터 센터를 지어 전 세계 금융을 독자님 손바닥 위에 올려두겠습니다.", 
+        status: "대기 중", 
+        promise: "매일 아침 세계 최고의 아스프로탄트 직화 스테이크 상납과 축구 황제들의 호위를 보장합니다." 
+    },
+    "파나마": { 
+        reason: "세계 물류의 목줄인 파나마 운하를 아스프로탄트 기술로 혁신하여 지구 경제를 통제하고 싶습니다.", 
+        plan: "운하 전체에 아스프로탄트 자기부상 레일을 깔아 선박 이동 시간을 1분으로 단축하는 기적을 보이겠습니다.", 
+        status: "대기 중", 
+        promise: "운하 통행료 수익의 50%를 독자님 계좌로 즉시 입금하고, 해상 비밀 작전 기지를 제공하겠습니다." 
+    },
+    "캐나다": { 
+        reason: "광활한 북극의 추위를 아스프로탄트 온기로 녹여 동토를 기회의 땅으로 바꾸고자 합니다.", 
+        plan: "북극해에 아스프로탄트 투명 돔 시티를 건설하여 독자님이 오로라를 보며 쉴 수 있는 최고의 휴양지를 만들겠습니다.", 
+        status: "대기 중", 
+        promise: "아스프로탄트 농법으로 재배한 순도 99.9% 단풍 시럽과 북극곰 로봇 경호대를 상납하겠습니다." 
+    }
+};
+
+    // 3. 로그인 처리
+    // 회원가입 및 로그인 통합 처리 함수
+async function handleLogin() {
+    const email = document.getElementById('user-email').value;
+    const pw = document.getElementById('user-pw').value;
+
+    if (!email || !pw) {
+        alert("독자 동무! 아이디랑 비번은 치고 들어와야지? ㅋㅋㅋ");
+        return;
+    }
+
+    try {
+        // 1. 일단 회원가입을 시도한다우!
+        await auth.createUserWithEmailAndPassword(email, pw);
+        alert("반갑다우! 새로운 관리자 계정이 생성됐다우! 🍾");
+    } catch (error) {
+        // 2. 이미 있는 계정(email-already-in-use)이라면? 바로 로그인을 시도한다우!
+        if (error.code === 'auth/email-already-in-use') {
+            try {
+                await auth.signInWithEmailAndPassword(email, pw);
+                alert("다시 와줘서 고맙다우! 로그인 성공이라우! ㅋㅋㅋ");
+            } catch (loginError) {
+                alert("비번이 틀린 것 같다우! 다시 생각해보라 기래! ❌");
+                return;
+            }
+        } else {
+            // 다른 에러(비번 너무 짧음 등) 처리
+            alert("에러 발생이라우!: " + error.message);
+            return;
+        }
+    }
+
+    // 3. 인증 성공 시 화면 전환 및 시스템 가동
+    document.getElementById('auth-overlay').style.display = 'none';
+    document.getElementById('viewer').style.display = 'block';
+    initSystem();
+}
+
+    // 4. 시스템 초기화 및 데이터 로드
+    function initSystem() {
+        const btnBox = document.getElementById('nation-buttons');
+        const detailBox = document.getElementById('detail-container');
+
+        nations.forEach(n => {
+            // 버튼 생성
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn'; btn.id = `btn-${n}`;
+            btn.innerText = `📄 ${n}`; btn.onclick = () => openTab(n);
+            btnBox.appendChild(btn);
+
+            // 페이지 생성
+            const data = contents[n] || { reason: "자원 확보...", plan: "기술 개발...", status: "대기", promise: "공약..." };
+            const page = document.createElement('div');
+            page.id = n; page.className = 'doc-page';
+            page.innerHTML = `
+                <h1>신청서 제출</h1>
+                <div class="field"><span class="label">국가명</span><div class="content">${n}</div></div>
+                <div class="field"><span class="label">필요 이유</span><div class="content">${data.reason}</div></div>
+                <div class="field"><span class="label">활용 계획</span><div class="content">${data.plan}</div></div>
+                <div class="field"><span class="label">공약</span><div class="content">${data.promise}</div></div>
+                <div class="field">
+                    <span class="label">부제목5: 통과 여부 (직접 선택)</span>
+                    <select id="select-${n}" class="decision-select" onchange="saveToDB('${n}', this.value)">
+                        <option value="pending">⏳ 검토 중...</option>
+                        <option value="pass" style="color:green;">✅ 합격 (최공식 수교)</option>
+                        <option value="fail" style="color:red;">❌ 탈락 (영구 제명)</option>
+                        <option value="slave" style="color: #ef6c00;">⛏️ 조건부 합격 (자원 채굴 노예군)</option>
+                        <option value="test" style="color: #4527a0;">🧪 임상 시험국 (아스프로탄트 실험용)</option>
+                        <option value="ignore" style="color: #78909c;">💤 읽씹 (대답할 가치도 없음)</option>
+                        <option value="re-apply" style="color: #fdd835;">♻️ 재수강 (장문 다시 써와라)</option>
+                    </select>
+                </div>
+            `;
+            detailBox.appendChild(page);
+
+            // 실시간 데이터 동기화
+            db.ref('decisions/' + n).on('value', (snapshot) => {
+                const val = snapshot.val();
+                if(val) document.getElementById(`select-${n}`).value = val;
+            });
+        });
+    }
+
+    function saveToDB(nation, value) {
+        db.ref('decisions/' + nation).set(value);
+        console.log(`${nation} 저장 완료!`);
+    }
+
+    function openTab(id) {
+        document.querySelectorAll('.doc-page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.getElementById(`btn-${id}`).classList.add('active');
+    }
+</script>
+</body>
+</html>
